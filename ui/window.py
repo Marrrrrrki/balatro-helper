@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import tkinter as tk
@@ -12,6 +13,7 @@ from core.save_reader import (
 )
 from core.advisor import analyze
 from ui.card_renderer import CardRenderer
+from ui.joker_renderer import JokerRenderer
 
 
 BG = "#10131b"
@@ -36,6 +38,9 @@ class AdvisorWindow:
 
         self.card_renderer = CardRenderer(root)
         self.card_images = []
+
+        self.joker_renderer = JokerRenderer(root)
+        self.joker_images = []
 
         self._style()
         self._build()
@@ -233,6 +238,7 @@ class AdvisorWindow:
         self.hand_frame = tk.Frame(left, bg=PANEL)
         self.hand_frame.pack(fill="x", pady=12)
 
+        # Joker collection
         tk.Label(
             left,
             text="JOKERS",
@@ -241,14 +247,8 @@ class AdvisorWindow:
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", pady=(10, 4))
 
-        self.joker_label = tk.Label(
-            left,
-            text="No Jokers",
-            bg=PANEL,
-            fg=MUTED,
-            font=("Segoe UI", 10),
-        )
-        self.joker_label.pack(anchor="w")
+        self.joker_frame = tk.Frame(left, bg=PANEL)
+        self.joker_frame.pack(fill="x", pady=(4, 8))
 
         # Recommendation panel
         right = tk.Frame(
@@ -446,7 +446,7 @@ class AdvisorWindow:
             text=str(s["ante"])
         )
 
-        # Clear old cards and keep references to new images.
+        # Render playing cards
         for child in self.hand_frame.winfo_children():
             child.destroy()
 
@@ -465,15 +465,13 @@ class AdvisorWindow:
             if photo:
                 self.card_images.append(photo)
 
-                image_label = tk.Label(
+                tk.Label(
                     card_frame,
                     image=photo,
                     bg=PANEL,
                     bd=0,
-                )
-                image_label.pack()
+                ).pack()
             else:
-                # Fallback if the atlas is missing or the card is unusual.
                 suit_symbols = {
                     "Hearts": "♥",
                     "Diamonds": "♦",
@@ -486,7 +484,7 @@ class AdvisorWindow:
 
                 fallback = tk.Frame(
                     card_frame,
-                    bg="#f2eee5",
+                    bg="#ffffff",
                     width=71,
                     height=95,
                     highlightbackground="#c9c1b3",
@@ -498,7 +496,7 @@ class AdvisorWindow:
                 tk.Label(
                     fallback,
                     text=str(card["rank_name"]),
-                    bg="#f2eee5",
+                    bg="#ffffff",
                     fg=fg,
                     font=("Segoe UI", 12, "bold"),
                 ).pack(anchor="nw", padx=5)
@@ -506,7 +504,7 @@ class AdvisorWindow:
                 tk.Label(
                     fallback,
                     text=suit_symbols.get(card["suit"], "?"),
-                    bg="#f2eee5",
+                    bg="#ffffff",
                     fg=fg,
                     font=("Segoe UI", 24, "bold"),
                 ).pack(expand=True)
@@ -515,9 +513,7 @@ class AdvisorWindow:
 
             enhancement = card.get("enhancement")
             if enhancement and enhancement != "Base":
-                extras.append(
-                    str(enhancement).replace("m_", "")
-                )
+                extras.append(str(enhancement).replace("m_", ""))
 
             edition = card.get("edition")
             if edition:
@@ -537,25 +533,80 @@ class AdvisorWindow:
                     wraplength=75,
                 ).pack(pady=(3, 0))
 
-        joker_names = []
+        # Render Joker icons
+        for child in self.joker_frame.winfo_children():
+            child.destroy()
 
-        for joker in s["jokers"]:
-            save_fields = joker.get("save_fields", {}) or {}
-            name = save_fields.get(
-                "center",
-                "Unknown Joker",
-            )
-            joker_names.append(
-                name.replace("j_", "")
-                .replace("_", " ")
-                .title()
-            )
+        self.joker_images.clear()
 
-        self.joker_label.configure(
-            text="  •  ".join(joker_names)
-            if joker_names
-            else "No Jokers"
-        )
+        jokers = s.get("jokers", [])
+
+        if not jokers:
+            tk.Label(
+                self.joker_frame,
+                text="No Jokers",
+                bg=PANEL,
+                fg=MUTED,
+                font=("Segoe UI", 10),
+            ).pack(anchor="w")
+        else:
+            for joker in jokers:
+                save_fields = joker.get("save_fields", {}) or {}
+
+                name = save_fields.get("center", "Unknown Joker")
+                display_name = (
+                    name.replace("j_", "")
+                    .replace("_", " ")
+                    .title()
+                )
+
+                joker_card = tk.Frame(
+                    self.joker_frame,
+                    bg="#252e3d",
+                    padx=5,
+                    pady=5,
+                    highlightbackground="#46536a",
+                    highlightthickness=1,
+                )
+                joker_card.pack(side="left", padx=(0, 8), pady=3)
+
+                photo = None
+
+                try:
+                    photo = self.joker_renderer.get_joker_image(joker)
+                except Exception:
+                    photo = None
+
+                if photo:
+                    self.joker_images.append(photo)
+
+                    tk.Label(
+                        joker_card,
+                        image=photo,
+                        bg="#252e3d",
+                        bd=0,
+                    ).pack()
+                else:
+                    # Fallback icon if the Joker image is unavailable.
+                    tk.Label(
+                        joker_card,
+                        text="★",
+                        bg="#252e3d",
+                        fg=GOLD,
+                        font=("Segoe UI", 25, "bold"),
+                        width=4,
+                        height=2,
+                    ).pack()
+
+                tk.Label(
+                    joker_card,
+                    text=display_name,
+                    bg="#252e3d",
+                    fg=TEXT,
+                    font=("Segoe UI", 8, "bold"),
+                    wraplength=85,
+                    justify="center",
+                ).pack(pady=(4, 0))
 
         if not self.card_renderer.available:
             self.status.configure(
