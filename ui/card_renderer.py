@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,11 +18,12 @@ class CardRenderer:
     CARD_WIDTH = 71
     CARD_HEIGHT = 95
 
+    # Correct row order in the Balatro card atlas.
     SUIT_ROWS = {
-        "Spades": 0,
-        "Hearts": 1,
-        "Clubs": 2,
-        "Diamonds": 3,
+        "Hearts": 0,
+        "Clubs": 1,
+        "Diamonds": 2,
+        "Spades": 3,
     }
 
     RANK_COLUMNS = {
@@ -119,7 +121,7 @@ class CardRenderer:
                 "RGBA",
                 sprite.size,
                 (255, 255, 255, 255),
-)
+            )
             white_background.alpha_composite(sprite)
             sprite = white_background
 

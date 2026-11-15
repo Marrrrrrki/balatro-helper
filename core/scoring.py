@@ -1,13 +1,8 @@
 
 from __future__ import annotations
 
-from .evaluator import evaluate
-
 
 # Static vanilla Joker effects supported by the advisor.
-# Dynamic, probabilistic and scaling effects are deliberately
-# left unsupported until their save data can be modelled accurately.
-
 JOKER_SIMPLE = {
     # Basic Jokers
     "j_joker": ("add_mult", 4),
@@ -79,7 +74,19 @@ def score_hand(
     held_cards=None,
     remaining_discards=None,
     remaining_deck=None,
+    details=True,
 ):
+    """
+    Calculate a Balatro hand score.
+
+    details=True:
+        Includes trigger breakdown notes and unsupported Joker names.
+
+    details=False:
+        Fast scoring mode for Monte Carlo simulations.
+        Skips building explanatory text.
+    """
+
     jokers = jokers or []
     held_cards = held_cards or []
 
@@ -91,10 +98,13 @@ def score_hand(
 
     scoring = list(evaluation["scoring_cards"])
 
-    notes = [
-        f"{name} level {level.get('level', 1)}: "
-        f"{chips:g} chips × {mult:g} mult"
-    ]
+    notes = []
+
+    if details:
+        notes.append(
+            f"{name} level {level.get('level', 1)}: "
+            f"{chips:g} chips × {mult:g} mult"
+        )
 
     # Splash makes every played card score.
     if any(
@@ -103,7 +113,9 @@ def score_hand(
         for joker in jokers
     ):
         scoring = list(selected)
-        notes.append("Splash: All played cards score")
+
+        if details:
+            notes.append("Splash: All played cards score")
 
     # Score playing cards.
     for card in scoring:
@@ -116,38 +128,52 @@ def score_hand(
 
         if enhancement == "m_bonus":
             chips += 30
-            notes.append(f"{card['name']}: Bonus +30 chips")
+
+            if details:
+                notes.append(f"{card['name']}: Bonus +30 chips")
 
         elif enhancement == "m_mult":
             mult += 4
-            notes.append(f"{card['name']}: Mult +4")
+
+            if details:
+                notes.append(f"{card['name']}: Mult +4")
 
         elif enhancement == "m_glass":
             mult *= 2
-            notes.append(f"{card['name']}: Glass ×2 mult")
+
+            if details:
+                notes.append(f"{card['name']}: Glass ×2 mult")
 
         edition = card.get("edition")
 
         if edition == "foil":
             chips += 50
-            notes.append(f"{card['name']}: Foil +50 chips")
+
+            if details:
+                notes.append(f"{card['name']}: Foil +50 chips")
 
         elif edition == "holo":
             mult += 10
-            notes.append(f"{card['name']}: Holographic +10 mult")
+
+            if details:
+                notes.append(f"{card['name']}: Holographic +10 mult")
 
         elif edition == "polychrome":
             mult *= 1.5
-            notes.append(f"{card['name']}: Polychrome ×1.5 mult")
+
+            if details:
+                notes.append(f"{card['name']}: Polychrome ×1.5 mult")
 
     # Held card effects.
     for card in held_cards:
-        if card in selected or card.get("debuff"):
+        if card.get("debuff"):
             continue
 
         if card.get("enhancement") == "m_steel":
             mult *= 1.5
-            notes.append(f"{card['name']}: Steel ×1.5 mult")
+
+            if details:
+                notes.append(f"{card['name']}: Steel ×1.5 mult")
 
     # Process Jokers from left to right.
     unsupported = []
@@ -160,9 +186,10 @@ def score_hand(
         effect = JOKER_SIMPLE.get(key)
 
         if not effect:
-            unsupported.append(
-                joker.get("label") or key or "Unknown Joker"
-            )
+            if details:
+                unsupported.append(
+                    joker.get("label") or key or "Unknown Joker"
+                )
             continue
 
         kind, value = effect
@@ -170,7 +197,9 @@ def score_hand(
         # Flat mult.
         if kind == "add_mult":
             mult += value
-            notes.append(f"Joker: +{value} mult")
+
+            if details:
+                notes.append(f"Joker: +{value} mult")
 
         # Suit-based mult.
         elif kind == "suit_mult":
@@ -184,10 +213,12 @@ def score_hand(
 
             if count:
                 mult += count * amount
-                notes.append(
-                    f"Joker: +{count * amount} mult "
-                    f"({count} {suit})"
-                )
+
+                if details:
+                    notes.append(
+                        f"Joker: +{count * amount} mult "
+                        f"({count} {suit})"
+                    )
 
         # Specific poker hands.
         elif kind == "conditional_mult":
@@ -195,14 +226,18 @@ def score_hand(
 
             if name == required_hand:
                 mult += amount
-                notes.append(f"Joker: +{amount} mult")
+
+                if details:
+                    notes.append(f"Joker: +{amount} mult")
 
         elif kind == "conditional_chips":
             required_hand, amount = value
 
             if name == required_hand:
                 chips += amount
-                notes.append(f"Joker: +{amount} chips")
+
+                if details:
+                    notes.append(f"Joker: +{amount} chips")
 
         # Small hands.
         elif kind == "max_cards_mult":
@@ -210,13 +245,17 @@ def score_hand(
 
             if len(selected) <= max_cards:
                 mult += amount
-                notes.append(f"Joker: +{amount} mult")
+
+                if details:
+                    notes.append(f"Joker: +{amount} mult")
 
         # Abstract Joker.
         elif kind == "joker_count_mult":
             amount = len(jokers) * value
             mult += amount
-            notes.append(f"Abstract: +{amount} mult")
+
+            if details:
+                notes.append(f"Abstract: +{amount} mult")
 
         # Banner.
         elif kind == "discard_chips":
@@ -224,14 +263,16 @@ def score_hand(
                 amount = max(0, int(remaining_discards)) * value
                 chips += amount
 
-                if amount:
+                if details and amount:
                     notes.append(f"Banner: +{amount} chips")
 
         # Mystic Summit.
         elif kind == "no_discards_mult":
             if remaining_discards == 0:
                 mult += value
-                notes.append(f"Mystic Summit: +{value} mult")
+
+                if details:
+                    notes.append(f"Mystic Summit: +{value} mult")
 
         # Blue Joker.
         elif kind == "deck_chips":
@@ -239,7 +280,7 @@ def score_hand(
                 amount = max(0, int(remaining_deck)) * value
                 chips += amount
 
-                if amount:
+                if details and amount:
                     notes.append(f"Blue Joker: +{amount} chips")
 
         # Even Steven.
@@ -252,9 +293,11 @@ def score_hand(
 
             if count:
                 mult += count * value
-                notes.append(
-                    f"Even Steven: +{count * value} mult"
-                )
+
+                if details:
+                    notes.append(
+                        f"Even Steven: +{count * value} mult"
+                    )
 
         # Odd Todd.
         elif kind == "odd_chips":
@@ -266,9 +309,11 @@ def score_hand(
 
             if count:
                 chips += count * value
-                notes.append(
-                    f"Odd Todd: +{count * value} chips"
-                )
+
+                if details:
+                    notes.append(
+                        f"Odd Todd: +{count * value} chips"
+                    )
 
         # Scholar.
         elif kind == "ace_bonus":
@@ -283,10 +328,12 @@ def score_hand(
             if count:
                 chips += count * chip_bonus
                 mult += count * mult_bonus
-                notes.append(
-                    f"Scholar: +{count * chip_bonus} chips "
-                    f"and +{count * mult_bonus} mult"
-                )
+
+                if details:
+                    notes.append(
+                        f"Scholar: +{count * chip_bonus} chips "
+                        f"and +{count * mult_bonus} mult"
+                    )
 
         # Fibonacci.
         elif kind == "fibonacci_mult":
@@ -298,9 +345,11 @@ def score_hand(
 
             if count:
                 mult += count * value
-                notes.append(
-                    f"Fibonacci: +{count * value} mult"
-                )
+
+                if details:
+                    notes.append(
+                        f"Fibonacci: +{count * value} mult"
+                    )
 
         # Walkie Talkie.
         elif kind == "walkie_bonus":
@@ -315,10 +364,12 @@ def score_hand(
             if count:
                 chips += count * chip_bonus
                 mult += count * mult_bonus
-                notes.append(
-                    f"Walkie Talkie: +{count * chip_bonus} chips "
-                    f"and +{count * mult_bonus} mult"
-                )
+
+                if details:
+                    notes.append(
+                        f"Walkie Talkie: +{count * chip_bonus} chips "
+                        f"and +{count * mult_bonus} mult"
+                    )
 
         # Smiley Face.
         elif kind == "face_mult":
@@ -330,9 +381,11 @@ def score_hand(
 
             if count:
                 mult += count * value
-                notes.append(
-                    f"Smiley Face: +{count * value} mult"
-                )
+
+                if details:
+                    notes.append(
+                        f"Smiley Face: +{count * value} mult"
+                    )
 
     score = max(0, int(round(chips * mult)))
 

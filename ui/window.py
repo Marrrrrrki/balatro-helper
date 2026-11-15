@@ -27,6 +27,13 @@ GOLD = "#f5c86a"
 class AdvisorWindow:
     def __init__(self, root, initial_path=None):
         self.root = root
+        self.root.iconbitmap(
+    str(
+        Path(__file__).resolve().parents[1]
+        / "assets"
+        / "balatro_helper.ico"
+    )
+)
         self.path = initial_path
         self.state = None
         self.last_mtime = None
@@ -35,6 +42,7 @@ class AdvisorWindow:
 
         self.auto_refresh = tk.BooleanVar(value=True)
         self.simulations = tk.IntVar(value=120)
+        self.strategy = tk.StringVar(value="score")
 
         self.card_renderer = CardRenderer(root)
         self.card_images = []
@@ -260,6 +268,25 @@ class AdvisorWindow:
         )
         right.pack(side="right", fill="both", expand=True)
         right.pack_propagate(False)
+
+        # Choose whether discard recommendations prioritize score or money.
+        strategy_frame = tk.Frame(right, bg=PANEL)
+        strategy_frame.pack(anchor="w", pady=(8, 2))
+
+        tk.Label(
+            strategy_frame,
+            text="Strategy:",
+            bg=PANEL,
+            fg=MUTED,
+        ).pack(side="left")
+
+        ttk.Combobox(
+            strategy_frame,
+            textvariable=self.strategy,
+            values=("score", "money"),
+            state="readonly",
+            width=12,
+        ).pack(side="left", padx=8)
 
         tk.Label(
             right,
@@ -632,12 +659,14 @@ class AdvisorWindow:
         )
 
         state_snapshot = self.state
+        objective = self.strategy.get()
 
         def worker():
             try:
                 result = analyze(
-                    state_snapshot,
-                    simulation_count,
+                state_snapshot,
+                simulation_count,
+                objective=objective,
                 )
 
                 self.root.after(
@@ -666,6 +695,7 @@ class AdvisorWindow:
         ).start()
 
     def _show_analysis(self, result):
+        
         self.analysis_result = result
         best = result["best"]
 
@@ -738,6 +768,21 @@ class AdvisorWindow:
             ),
         ]
 
+        discard = result.get("discard")
+
+        if (
+            result.get("objective") == "money"
+            and discard
+            and discard.get("money_ev", 0)
+        ):
+            lines += [
+                "",
+                (
+                    f"Mail-In Rebate: +${discard['money_ev']} "
+                    f"for {discard.get('mail_rank_count', 0)} matching card(s)"
+                ),
+            ]
+
         self.breakdown.configure(state="normal")
         self.breakdown.delete("1.0", "end")
         self.breakdown.insert("1.0", "\n".join(lines))
@@ -750,6 +795,7 @@ class AdvisorWindow:
             )
         )
 
+    
     def _watch_loop(self):
         try:
             if (
