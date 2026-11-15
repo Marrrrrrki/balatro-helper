@@ -32,8 +32,17 @@ def analyze(state, simulations=120):
 
     def scorer(chosen, evaluation, hand_levels):
         held = [card for card in hand if card not in chosen]
+
         return score_hand(
-            chosen, evaluation, hand_levels, jokers, held
+            chosen,
+            evaluation,
+            hand_levels,
+            jokers,
+            held,
+            remaining_discards=_nonnegative_int(
+                state.get("discards_left")
+            ),
+            remaining_deck=len(deck),
         )
 
     current = best_play(hand, levels, scorer) if hand else None
