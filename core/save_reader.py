@@ -132,14 +132,12 @@ def card_from_save(raw: dict) -> dict:
 
 
 def extract_mail_rank(current_round: dict):
-    """Read Mail-In Rebate's target rank from the current round save data."""
     mail_card = current_round.get("mail_card")
 
     if mail_card is None:
         return None
 
     if isinstance(mail_card, dict):
-        # Different save versions may store the rank in different shapes.
         base = mail_card.get("base", {}) or {}
 
         value = (
@@ -169,6 +167,29 @@ def extract_mail_rank(current_round: dict):
         return None
 
 
+def extract_blind_key(blind: dict):
+    """Find the internal blind key across common save-data layouts."""
+    if not isinstance(blind, dict):
+        return None
+
+    config = blind.get("config", {}) or {}
+    config_blind = config.get("blind", {}) or {}
+
+    candidates = [
+        blind.get("key"),
+        blind.get("id"),
+        config_blind.get("key"),
+        config_blind.get("id"),
+        config.get("key"),
+    ]
+
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return None
+
+
 def extract_state(root: dict) -> dict:
     areas = root.get("cardAreas", {}) or {}
     game = root.get("GAME", {}) or {}
@@ -192,6 +213,7 @@ def extract_state(root: dict) -> dict:
     return {
         "version": root.get("VERSION", "Unknown"),
         "blind_name": blind.get("name", "Unknown blind"),
+        "blind_key": extract_blind_key(blind),
         "blind_target": blind.get("chips", 0),
         "ante": resets.get("ante", "?"),
         "hands_left": current.get(

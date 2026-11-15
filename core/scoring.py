@@ -1,17 +1,16 @@
 
 from __future__ import annotations
 
+from .boss_blinds import card_is_blind_debuffed
 
-# Static vanilla Joker effects supported by the advisor.
+
 JOKER_SIMPLE = {
-    # Basic Jokers
     "j_joker": ("add_mult", 4),
     "j_greedy": ("suit_mult", ("Diamonds", 3)),
     "j_lusty": ("suit_mult", ("Hearts", 3)),
     "j_wrathful": ("suit_mult", ("Spades", 3)),
     "j_gluttenous": ("suit_mult", ("Clubs", 3)),
 
-    # Hand-specific Jokers
     "j_jolly": ("conditional_mult", ("Pair", 8)),
     "j_zany": ("conditional_mult", ("Three of a Kind", 12)),
     "j_mad": ("conditional_mult", ("Two Pair", 10)),
@@ -24,14 +23,12 @@ JOKER_SIMPLE = {
     "j_devious": ("conditional_chips", ("Straight", 100)),
     "j_crafty": ("conditional_chips", ("Flush", 80)),
 
-    # Card-count Jokers
     "j_half": ("max_cards_mult", (3, 20)),
     "j_abstract": ("joker_count_mult", 3),
     "j_banner": ("discard_chips", 30),
     "j_mystic_summit": ("no_discards_mult", 15),
     "j_blue_joker": ("deck_chips", 2),
 
-    # Rank-based Jokers
     "j_even_steven": ("even_mult", 4),
     "j_odd_todd": ("odd_chips", 31),
     "j_scholar": ("ace_bonus", (20, 4)),
@@ -39,10 +36,8 @@ JOKER_SIMPLE = {
     "j_walkie_talkie": ("walkie_bonus", (10, 4)),
     "j_smiley": ("face_mult", 5),
 
-    # Special Jokers
     "j_splash": ("all_cards_score", True),
 }
-
 
 FIBONACCI_RANKS = {2, 3, 5, 8, 14}
 EVEN_RANKS = {2, 4, 6, 8, 10}
@@ -75,20 +70,16 @@ def score_hand(
     remaining_discards=None,
     remaining_deck=None,
     details=True,
+    blind_rules=None,
 ):
     """
     Calculate a Balatro hand score.
 
-    details=True:
-        Includes trigger breakdown notes and unsupported Joker names.
-
-    details=False:
-        Fast scoring mode for Monte Carlo simulations.
-        Skips building explanatory text.
+    blind_rules is optional so existing callers remain compatible.
     """
-
     jokers = jokers or []
     held_cards = held_cards or []
+    blind_rules = blind_rules or {}
 
     name = evaluation["name"]
     level = (hand_levels or {}).get(name, {}) or {}
@@ -96,8 +87,11 @@ def score_hand(
     chips = float(level.get("chips", 0) or 0)
     mult = float(level.get("mult", 0) or 0)
 
-    scoring = list(evaluation["scoring_cards"])
+    # Flint halves the base hand values before card and Joker effects.
+    chips *= float(blind_rules.get("chip_factor", 1.0))
+    mult *= float(blind_rules.get("mult_factor", 1.0))
 
+    scoring = list(evaluation["scoring_cards"])
     notes = []
 
     if details:
@@ -106,7 +100,15 @@ def score_hand(
             f"{chips:g} chips × {mult:g} mult"
         )
 
-    # Splash makes every played card score.
+        description = blind_rules.get("description")
+        if description:
+            notes.append(description)
+
+        warning = blind_rules.get("warning")
+        if warning:
+            notes.append(f"BLIND WARNING: {warning}")
+
+    # Splash makes every played card score, except debuffed cards.
     if any(
         (joker.get("save_fields") or {}).get("center") == "j_splash"
         and not joker.get("debuff")
@@ -117,9 +119,9 @@ def score_hand(
         if details:
             notes.append("Splash: All played cards score")
 
-    # Score playing cards.
+    # Playing card effects.
     for card in scoring:
-        if card.get("debuff"):
+        if card_is_blind_debuffed(card, blind_rules):
             continue
 
         chips += card_chips(card)
@@ -128,19 +130,16 @@ def score_hand(
 
         if enhancement == "m_bonus":
             chips += 30
-
             if details:
                 notes.append(f"{card['name']}: Bonus +30 chips")
 
         elif enhancement == "m_mult":
             mult += 4
-
             if details:
                 notes.append(f"{card['name']}: Mult +4")
 
         elif enhancement == "m_glass":
             mult *= 2
-
             if details:
                 notes.append(f"{card['name']}: Glass ×2 mult")
 
@@ -148,30 +147,26 @@ def score_hand(
 
         if edition == "foil":
             chips += 50
-
             if details:
                 notes.append(f"{card['name']}: Foil +50 chips")
 
         elif edition == "holo":
             mult += 10
-
             if details:
                 notes.append(f"{card['name']}: Holographic +10 mult")
 
         elif edition == "polychrome":
             mult *= 1.5
-
             if details:
                 notes.append(f"{card['name']}: Polychrome ×1.5 mult")
 
     # Held card effects.
     for card in held_cards:
-        if card.get("debuff"):
+        if card_is_blind_debuffed(card, blind_rules):
             continue
 
         if card.get("enhancement") == "m_steel":
             mult *= 1.5
-
             if details:
                 notes.append(f"{card['name']}: Steel ×1.5 mult")
 
@@ -194,198 +189,149 @@ def score_hand(
 
         kind, value = effect
 
-        # Flat mult.
         if kind == "add_mult":
             mult += value
-
             if details:
                 notes.append(f"Joker: +{value} mult")
 
-        # Suit-based mult.
         elif kind == "suit_mult":
             suit, amount = value
-
             count = sum(
                 1 for card in scoring
                 if card.get("suit") == suit
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
 
             if count:
                 mult += count * amount
-
                 if details:
                     notes.append(
                         f"Joker: +{count * amount} mult "
                         f"({count} {suit})"
                     )
 
-        # Specific poker hands.
         elif kind == "conditional_mult":
             required_hand, amount = value
-
             if name == required_hand:
                 mult += amount
-
                 if details:
                     notes.append(f"Joker: +{amount} mult")
 
         elif kind == "conditional_chips":
             required_hand, amount = value
-
             if name == required_hand:
                 chips += amount
-
                 if details:
                     notes.append(f"Joker: +{amount} chips")
 
-        # Small hands.
         elif kind == "max_cards_mult":
             max_cards, amount = value
-
             if len(selected) <= max_cards:
                 mult += amount
-
                 if details:
                     notes.append(f"Joker: +{amount} mult")
 
-        # Abstract Joker.
         elif kind == "joker_count_mult":
             amount = len(jokers) * value
             mult += amount
-
             if details:
                 notes.append(f"Abstract: +{amount} mult")
 
-        # Banner.
         elif kind == "discard_chips":
             if remaining_discards is not None:
                 amount = max(0, int(remaining_discards)) * value
                 chips += amount
-
                 if details and amount:
                     notes.append(f"Banner: +{amount} chips")
 
-        # Mystic Summit.
         elif kind == "no_discards_mult":
             if remaining_discards == 0:
                 mult += value
-
                 if details:
                     notes.append(f"Mystic Summit: +{value} mult")
 
-        # Blue Joker.
         elif kind == "deck_chips":
             if remaining_deck is not None:
                 amount = max(0, int(remaining_deck)) * value
                 chips += amount
-
                 if details and amount:
                     notes.append(f"Blue Joker: +{amount} chips")
 
-        # Even Steven.
         elif kind == "even_mult":
             count = sum(
                 1 for card in scoring
                 if card.get("rank") in EVEN_RANKS
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
-
             if count:
                 mult += count * value
-
                 if details:
-                    notes.append(
-                        f"Even Steven: +{count * value} mult"
-                    )
+                    notes.append(f"Even Steven: +{count * value} mult")
 
-        # Odd Todd.
         elif kind == "odd_chips":
             count = sum(
                 1 for card in scoring
                 if card.get("rank") in ODD_RANKS
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
-
             if count:
                 chips += count * value
-
                 if details:
-                    notes.append(
-                        f"Odd Todd: +{count * value} chips"
-                    )
+                    notes.append(f"Odd Todd: +{count * value} chips")
 
-        # Scholar.
         elif kind == "ace_bonus":
             chip_bonus, mult_bonus = value
-
             count = sum(
                 1 for card in scoring
                 if card.get("rank") == 14
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
-
             if count:
                 chips += count * chip_bonus
                 mult += count * mult_bonus
-
                 if details:
                     notes.append(
                         f"Scholar: +{count * chip_bonus} chips "
                         f"and +{count * mult_bonus} mult"
                     )
 
-        # Fibonacci.
         elif kind == "fibonacci_mult":
             count = sum(
                 1 for card in scoring
                 if card.get("rank") in FIBONACCI_RANKS
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
-
             if count:
                 mult += count * value
-
                 if details:
-                    notes.append(
-                        f"Fibonacci: +{count * value} mult"
-                    )
+                    notes.append(f"Fibonacci: +{count * value} mult")
 
-        # Walkie Talkie.
         elif kind == "walkie_bonus":
             chip_bonus, mult_bonus = value
-
             count = sum(
                 1 for card in scoring
                 if card.get("rank") in (4, 10)
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
-
             if count:
                 chips += count * chip_bonus
                 mult += count * mult_bonus
-
                 if details:
                     notes.append(
                         f"Walkie Talkie: +{count * chip_bonus} chips "
                         f"and +{count * mult_bonus} mult"
                     )
 
-        # Smiley Face.
         elif kind == "face_mult":
             count = sum(
                 1 for card in scoring
                 if card.get("rank") in FACE_RANKS
-                and not card.get("debuff")
+                and not card_is_blind_debuffed(card, blind_rules)
             )
-
             if count:
                 mult += count * value
-
                 if details:
-                    notes.append(
-                        f"Smiley Face: +{count * value} mult"
-                    )
+                    notes.append(f"Smiley Face: +{count * value} mult")
 
     score = max(0, int(round(chips * mult)))
 
@@ -395,7 +341,5 @@ def score_hand(
         "score": score,
         "notes": notes,
         "unsupported_jokers": unsupported,
-        "accuracy": (
-            "Partial" if unsupported else "Core effects only"
-        ),
+        "accuracy": "Partial" if unsupported else "Core effects only",
     }
