@@ -114,6 +114,15 @@ class CardRenderer:
 
             sprite = self.atlas.crop((x1, y1, x2, y2))
 
+            # Replace transparent pixels with solid white.
+            white_background = Image.new(
+                "RGBA",
+                sprite.size,
+                (255, 255, 255, 255),
+)
+            white_background.alpha_composite(sprite)
+            sprite = white_background
+
             # Keep the original pixel-art style.
             sprite = sprite.resize(
                 (self.CARD_WIDTH, self.CARD_HEIGHT),
