@@ -1,0 +1,2 @@
+# Balatro Advisor uses only the Python standard library.
+# Python 3.10+ recommended.
